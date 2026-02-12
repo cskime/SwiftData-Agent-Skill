@@ -1,69 +1,97 @@
 # SwiftData History and Change Tracking
 
 ## Scope
-Use SwiftData history to process incremental transactions with durable checkpoints. This is essential when app targets multiple processes (widgets/extensions) or synchronization pipelines.
+Use SwiftData history for incremental processing with durable checkpoints. Prioritize idempotent consumers, bounded batches, and strict checkpoint write ordering.
 
 ## Do
-- Read transactions in bounded windows
-- Persist history token after successful processing
-- Build idempotent processors so replay is safe
-- Keep history ingestion separate from view rendering
+- Process history in bounded windows
+- Keep checkpoint token storage durable (disk/db/keychain, not memory only)
+- Apply side effects idempotently per transaction
+- Write the new checkpoint only after downstream side effects are committed
+- Separate ingestion workers from UI presentation code
 
 ## Don't
-- Don't scan full history from the beginning on every launch
-- Don't update checkpoint token before work is committed
-- Don't couple token storage to volatile memory only
-- Don't process unlimited transaction windows in one pass
+- Don't re-scan full history on every launch
+- Don't persist a checkpoint before work success is durable
+- Don't compare tokens using ad-hoc ordering logic
+- Don't process unlimited windows in one pass
 
 ## Wrong vs Correct
 
 ```swift
 import SwiftData
 
-// WRONG: No checkpointing, replays entire history every time.
-func wrongHistoryReplay(container: ModelContainer) throws {
+enum HistoryProcessingError: Error {
+    case checkpointNotInWindow
+}
+
+// WRONG: Updates checkpoint too early and uses weak token filtering.
+func wrongHistoryReplay(container: ModelContainer, lastToken: HistoryToken?) throws -> HistoryToken? {
     let descriptor = HistoryDescriptor<ModelTransaction>(fetchLimit: 500)
     let transactions = try container.mainContext.fetchHistory(descriptor)
 
-    for transaction in transactions {
-        // expensive work repeated on every launch
-        _ = transaction.changes
-    }
+    // Incorrect: token inequality is not a safe progression strategy.
+    let newTransactions = transactions.filter { $0.token != lastToken }
+    let optimisticToken = newTransactions.last?.token
+
+    // Incorrect: checkpoint moves before side effects are durable.
+    return optimisticToken
 }
 
-// CORRECT: Use incremental processing and durable token storage.
-func processHistory(
+// CORRECT: Process incrementally and checkpoint after durable work.
+func processHistoryWindow(
     container: ModelContainer,
-    lastToken: HistoryToken?
+    lastToken: HistoryToken?,
+    batchSize: Int = 100
 ) throws -> HistoryToken? {
-    let descriptor = HistoryDescriptor<ModelTransaction>(fetchLimit: 100)
+    let descriptor = HistoryDescriptor<ModelTransaction>(fetchLimit: batchSize)
     let transactions = try container.mainContext.fetchHistory(descriptor)
-    let newTransactions = transactions.filter { transaction in
-        isAfterCheckpoint(transaction.token, checkpoint: lastToken)
-    }
-    guard !newTransactions.isEmpty else { return lastToken }
+    guard !transactions.isEmpty else { return lastToken }
 
-    for transaction in newTransactions {
-        // idempotent processing based on transaction changes
-        _ = transaction.changeCount
+    let startIndex: Int
+    if let lastToken {
+        // In production, prefer an SDK query anchored at `lastToken` when available.
+        guard let checkpointIndex = transactions.lastIndex(where: { $0.token == lastToken }) else {
+            throw HistoryProcessingError.checkpointNotInWindow
+        }
+        startIndex = checkpointIndex + 1
+    } else {
+        startIndex = transactions.startIndex
     }
 
-    return newTransactions.last?.token
+    var nextToken = lastToken
+    for transaction in transactions[startIndex...] {
+        try applyIdempotentSideEffects(transaction)
+        nextToken = transaction.token
+    }
+
+    // Persist nextToken only after side effects are committed.
+    return nextToken
 }
 
-func isAfterCheckpoint(_ token: HistoryToken, checkpoint: HistoryToken?) -> Bool {
-    guard let checkpoint else { return true }
-    // Implement app-specific token comparison logic here.
-    return token != checkpoint
+func applyIdempotentSideEffects(_ transaction: ModelTransaction) throws {
+    // Use transaction token (or equivalent unique transaction key)
+    // to deduplicate side effects in downstream storage.
+    _ = transaction.changeCount
 }
 ```
 
-## Token Handling Guidance
-- Write token only after downstream side effects are durable
-- Keep token scope explicit (per store/per consumer)
-- Guard against duplicate processing by design, not by luck
+## Checkpoint Durability Contract
+- Scope checkpoint by consumer and store (for example: `widget-sync:primary-store`)
+- Store checkpoint atomically with downstream commit state
+- On failure, keep previous checkpoint and retry safely
+- If checkpoint cannot be found in the fetched window, trigger controlled backfill or widen window
+
+## Operational Pattern
+1. Load last durable checkpoint
+2. Fetch bounded history window
+3. Process transactions in commit order
+4. Commit side effects
+5. Persist new checkpoint atomically
+6. Repeat until window is empty or execution budget is reached
 
 ## Pitfalls
-- Token loss forces expensive full reprocessing and can duplicate side effects
-- Large history windows can block launch workflows
-- Mixing history handling with UI state often causes lifecycle race conditions
+- Early checkpoint writes can permanently skip unprocessed changes
+- Non-idempotent consumers create duplicate side effects on retry
+- Missing checkpoint scoping causes cross-consumer corruption
+- Oversized windows can block launch and increase memory pressure

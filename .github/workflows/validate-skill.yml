@@ -26,3 +26,57 @@ jobs:
             exit 1
           fi
 
+      - name: Validate SKILL reference links
+        run: |
+          set -euo pipefail
+          refs=$(grep -oE 'references/[a-z0-9-]+\.md' swiftdata-expert-skill/SKILL.md | sort -u)
+          if [ -z "$refs" ]; then
+            echo "No references/*.md links found in SKILL.md"
+            exit 1
+          fi
+
+          for ref in $refs; do
+            test -f "swiftdata-expert-skill/$ref" || {
+              echo "Missing linked reference: $ref"
+              exit 1
+            }
+          done
+
+      - name: Validate all references are indexed by SKILL
+        run: |
+          set -euo pipefail
+          for ref_file in swiftdata-expert-skill/references/*.md; do
+            short_path=${ref_file#swiftdata-expert-skill/}
+            grep -q "$short_path" swiftdata-expert-skill/SKILL.md || {
+              echo "Reference is not listed in SKILL.md: $short_path"
+              exit 1
+            }
+          done
+
+      - name: Validate SKILL heading uniqueness
+        run: |
+          set -euo pipefail
+          duplicates=$(awk '/^## / || /^### / { print $0 }' swiftdata-expert-skill/SKILL.md | sort | uniq -d)
+          if [ -n "$duplicates" ]; then
+            echo "Duplicate headings found in SKILL.md:"
+            echo "$duplicates"
+            exit 1
+          fi
+
+      - name: Validate SKILL conciseness KPI
+        run: |
+          set -euo pipefail
+          lines=$(wc -l < swiftdata-expert-skill/SKILL.md)
+          max_lines=140
+          if [ "$lines" -gt "$max_lines" ]; then
+            echo "SKILL.md is too long: ${lines} lines (max ${max_lines})"
+            exit 1
+          fi
+
+      - name: Validate routing matrix exists
+        run: |
+          set -euo pipefail
+          grep -q '^## Situation Routing Matrix$' swiftdata-expert-skill/SKILL.md || {
+            echo "Missing 'Situation Routing Matrix' section in SKILL.md"
+            exit 1
+          }

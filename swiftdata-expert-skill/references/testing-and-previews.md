@@ -40,18 +40,29 @@ final class Project {
 
 // CORRECT: Preview uses explicit in-memory container and deterministic fixtures.
 #Preview("Project List Correct") {
-    let container = try! ModelContainer(
-        for: Project.self,
-        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-    )
+    guard
+        let alphaID = UUID(uuidString: "00000000-0000-0000-0000-000000000001"),
+        let betaID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")
+    else {
+        return Text("Invalid preview fixture IDs")
+    }
 
-    let context = container.mainContext
-    context.insert(Project(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, name: "Alpha"))
-    context.insert(Project(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, name: "Beta"))
-    try! context.save()
+    do {
+        let container = try ModelContainer(
+            for: Project.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
 
-    return ProjectListView()
-        .modelContainer(container)
+        let context = container.mainContext
+        context.insert(Project(id: alphaID, name: "Alpha"))
+        context.insert(Project(id: betaID, name: "Beta"))
+        try context.save()
+
+        return ProjectListView()
+            .modelContainer(container)
+    } catch {
+        return Text("Preview setup failed: \(error.localizedDescription)")
+    }
 }
 ```
 

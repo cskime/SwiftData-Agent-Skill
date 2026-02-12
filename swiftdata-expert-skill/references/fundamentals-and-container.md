@@ -41,11 +41,17 @@ struct ProjectListView: View {
 // CORRECT: Own one shared container at app composition boundary.
 @main
 struct ExampleApp: App {
-    private let container: ModelContainer = {
+    private let container: ModelContainer
+
+    init() {
         let schema = Schema([Project.self])
         let configuration = ModelConfiguration("Primary")
-        return try! ModelContainer(for: schema, configurations: [configuration])
-    }()
+        do {
+            container = try ModelContainer(for: schema, configurations: [configuration])
+        } catch {
+            fatalError("Failed to create ModelContainer: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {

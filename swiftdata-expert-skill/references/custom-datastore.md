@@ -1,21 +1,28 @@
 # SwiftData Custom Data Store Reference
 
 ## Scope
-Use `DataStore` only when product requirements cannot be met by the default store. Keep custom store concerns isolated from domain models and UI code.
+Use custom `DataStore` only when hard product constraints cannot be met by the default store. Treat custom persistence as infrastructure with explicit contracts, not as app-layer convenience.
+
+## Adoption Gate (must satisfy at least one)
+- Existing backend must remain source of truth
+- Regulatory/compliance rules require non-default persistence behavior
+- Multi-platform engine compatibility requires shared backend semantics
+- Data locality/transport controls exceed default store capabilities
 
 ## Do
-- Start with default store and document the exact gap before custom store adoption
-- Keep custom store adapter boundaries narrow and testable
-- Preserve stable model identity mapping across snapshots
-- Add integration tests for fetch/write/delete/transaction semantics
+- Document the exact requirement gap before adoption
+- Keep a strict adapter boundary between domain and backend
+- Preserve stable identity mapping across snapshots
+- Define explicit conflict and retry policy
+- Add contract tests for create/fetch/update/delete/ordering/transaction semantics
 
 ## Don't
-- Don't introduce custom store for stylistic reasons
-- Don't leak backend-specific details into view or model layers
-- Don't skip transaction and error propagation tests
-- Don't assume custom store behavior matches default store edge cases
+- Don't adopt custom store for stylistic architecture preferences
+- Don't leak backend details into model, view, or feature layers
+- Don't assume default-store edge behavior will match custom behavior
+- Don't ship without failure-mode tests (timeouts, partial writes, retries)
 
-## Wrong vs Correct
+## Boundary Pattern
 
 ```swift
 import SwiftData
@@ -31,49 +38,63 @@ final class Note {
     }
 }
 
-// WRONG: Backend concerns leak through app layers.
-struct NoteService {
-    func writeRawSQL(_ statement: String) {
-        // hard-coded backend detail in domain service
-    }
-}
-
-// CORRECT: Keep custom persistence behind a store adapter boundary.
+// Domain-facing contract (stable for app layers).
 protocol NotePersistence {
-    func fetchAll() throws -> [Note]
-    func upsert(_ note: Note) throws
-    func delete(id: UUID) throws
+    func fetchAll() async throws -> [Note]
+    func upsert(_ note: Note) async throws
+    func delete(id: UUID) async throws
 }
 
-struct SwiftDataNoteRepository {
-    let context: ModelContext
+// Backend-facing record contract (isolated from SwiftData models).
+struct NoteRecord {
+    let id: UUID
+    let body: String
+}
 
-    func fetchAll() throws -> [Note] {
-        try context.fetch(FetchDescriptor<Note>())
+protocol BackendNoteStore {
+    func fetchAll() async throws -> [NoteRecord]
+    func write(_ records: [NoteRecord]) async throws
+    func delete(id: UUID) async throws
+}
+
+actor NoteStoreAdapter: NotePersistence {
+    private let backend: BackendNoteStore
+
+    init(backend: BackendNoteStore) {
+        self.backend = backend
     }
 
-    func upsert(_ note: Note) throws {
-        context.insert(note)
-        try context.save()
+    func fetchAll() async throws -> [Note] {
+        let records = try await backend.fetchAll()
+        return records.map { Note(id: $0.id, body: $0.body) }
     }
 
-    func delete(id: UUID) throws {
-        let descriptor = FetchDescriptor<Note>(predicate: #Predicate { $0.id == id })
-        guard let note = try context.fetch(descriptor).first else { return }
-        context.delete(note)
-        try context.save()
+    func upsert(_ note: Note) async throws {
+        try await backend.write([NoteRecord(id: note.id, body: note.body)])
+    }
+
+    func delete(id: UUID) async throws {
+        try await backend.delete(id: id)
     }
 }
 ```
 
-## Adoption Gate
-Adopt custom store only when one or more are true:
-- Existing backend must remain source of truth
-- Regulatory rules require non-default persistence behavior
-- Cross-platform engine compatibility must be preserved
-- Data locality/transport controls exceed default store capabilities
+## Contract Test Matrix
+- Identity stability: same backend identity maps to one model identity
+- Ordering guarantees: repeated reads preserve declared sort contract
+- Transaction behavior: partial failures do not silently reorder or drop writes
+- Retry behavior: duplicate delivery does not create duplicate domain records
+- Error mapping: backend errors map to deterministic app-level failures
+- Migration compatibility: old snapshots decode and map without identity drift
+
+## Review Checklist
+- Requirement gap for custom store is written and approved
+- Adapter boundary is isolated from UI/model layers
+- Conflict policy (last-write-wins, merge, reject) is explicit
+- Retry/idempotency policy is test-backed
+- Failure telemetry and alerting paths are defined
 
 ## Pitfalls
-- Identity mismatches between store snapshots and in-memory models cause duplication bugs
-- Implicit backend retries can reorder writes without clear conflict policy
-- Under-tested custom store adapters fail on rare migration edges
+- Identity drift between backend and SwiftData snapshots causes duplicate rows
+- Hidden backend retries can reorder writes without conflict policy
+- Thin test coverage misses migration and retry edge failures
