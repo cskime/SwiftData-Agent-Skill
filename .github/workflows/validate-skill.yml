@@ -1,0 +1,28 @@
+name: Validate Skill Structure
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required files
+        run: |
+          test -f swiftdata-expert-skill/SKILL.md
+          test -d swiftdata-expert-skill/references
+
+      - name: Validate reference documents exist
+        run: |
+          count=$(find swiftdata-expert-skill/references -type f -name "*.md" | wc -l)
+          if [ "$count" -lt 1 ]; then
+            echo "Expected at least one reference markdown file"
+            exit 1
+          fi
+
