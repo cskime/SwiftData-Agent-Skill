@@ -17,6 +17,7 @@ An expert SwiftData skill for iOS 26+ focused on modeling, querying, context iso
 └── swiftdata-expert-skill/
     ├── SKILL.md
     └── references/
+        ├── cloudkit-sync-compatibility.md
         ├── concurrency-and-context-isolation.md
         ├── custom-datastore.md
         ├── fundamentals-and-container.md
@@ -48,4 +49,3 @@ Mention `swiftdata-expert-skill` in your prompt, or ask SwiftData-specific tasks
 - Review relationship delete rules and model invariants
 - Optimize SwiftData query and context performance
 - Add history-token processing for cross-process sync
-

@@ -8,6 +8,7 @@ description: SwiftData guidance for iOS 26+ focused on modeling, query design, c
 ## When To Use
 Use this skill when the request includes one or more of the following:
 - SwiftData model design, relationship rules, or schema invariants
+- SwiftData + iCloud/CloudKit automatic sync schema compatibility
 - `@Query`, `FetchDescriptor`, `#Predicate`, or fetch performance issues
 - actor isolation, background writes, or context ownership bugs
 - history token processing, cross-process sync, or replay safety
@@ -25,6 +26,7 @@ Use this skill when the request includes one or more of the following:
 |---|---|---|
 | Container wiring, topology, app boundary | `references/fundamentals-and-container.md` | `references/testing-and-previews.md` |
 | Model invariants, uniqueness, delete rules | `references/modeling-and-relationships.md` | `references/review-checklist.md` |
+| iCloud/CloudKit automatic sync schema compatibility | `references/cloudkit-sync-compatibility.md` | `references/modeling-and-relationships.md` |
 | UI query design, predicate/sort issues | `references/query-and-predicate-patterns.md` | `references/performance-patterns.md` |
 | Actor isolation, context ownership, background writes | `references/concurrency-and-context-isolation.md` | `references/review-checklist.md` |
 | Incremental history processing, token durability | `references/history-and-change-tracking.md` | `references/concurrency-and-context-isolation.md` |
@@ -70,6 +72,7 @@ Choose one template per request type.
 - Treat `try!` and force unwrap as preview/test-only shortcuts; use explicit error handling in app/runtime code.
 
 ## Reference Index
+- `references/cloudkit-sync-compatibility.md`
 - `references/fundamentals-and-container.md`
 - `references/modeling-and-relationships.md`
 - `references/query-and-predicate-patterns.md`

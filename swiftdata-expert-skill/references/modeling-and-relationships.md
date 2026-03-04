@@ -2,6 +2,7 @@
 
 ## Scope
 Model data invariants directly in type definitions using `@Model`, `@Attribute`, and `@Relationship`. Relationship rules should mirror business rules, not UI convenience.
+If CloudKit-backed iCloud sync is enabled, also apply `cloudkit-sync-compatibility.md` constraints.
 
 ## Do
 - Use `@Attribute(.unique)` only when duplicates are truly invalid
